@@ -1,6 +1,7 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from datetime import datetime
+import json
 
 db = SQLAlchemy()
 
@@ -78,3 +79,34 @@ class OrdenItem(db.Model):
     def __repr__(self):
         return f'<CarritoItem usuario={self.usuario_id} producto={self.producto_id}>'    
     
+    
+    # ============ MODELOS ETL (Agregar al final) ============
+
+class ReporteETL(db.Model):
+    """Almacena los resultados de las ejecuciones ETL"""
+    id = db.Column(db.Integer, primary_key=True)
+    fecha_reporte = db.Column(db.DateTime, default=datetime.utcnow)
+    tipo_reporte = db.Column(db.String(100))  # ventas, productos, usuarios
+    datos = db.Column(db.Text)  # Guardamos JSON como texto
+    resumen = db.Column(db.String(500))
+    
+    def get_datos(self):
+        """Convierte el JSON almacenado en diccionario"""
+        import json
+        return json.loads(self.datos) if self.datos else {}
+    
+    def __repr__(self):
+        return f'<ReporteETL {self.tipo_reporte} - {self.fecha_reporte}>'
+
+
+class MetricasDiarias(db.Model):
+    """Métricas agregadas por día para análisis rápido"""
+    id = db.Column(db.Integer, primary_key=True)
+    fecha = db.Column(db.Date, unique=True, nullable=False)
+    total_ventas = db.Column(db.Float, default=0)
+    total_ordenes = db.Column(db.Integer, default=0)
+    productos_vendidos = db.Column(db.Integer, default=0)
+    usuarios_nuevos = db.Column(db.Integer, default=0)
+    
+    def __repr__(self):
+        return f'<MetricasDiarias {self.fecha} - Ventas: ${self.total_ventas}>'

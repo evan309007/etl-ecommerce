@@ -17,6 +17,11 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'Por favor inicia sesión para acceder a esta página'
 
+@app.route('/etl-test')
+@login_required
+def etl_test():
+    return "<h1>ETL Dashboard</h1><p>Esta ruta funciona!</p>"
+
 @login_manager.user_loader
 def load_user(user_id):
     return Usuario.query.get(int(user_id))
@@ -575,3 +580,40 @@ def ver_orden(orden_id):
 
 if __name__ == '__main__':
     app.run(debug=True)
+    
+# ============ ENDPOINTS ETL ============
+
+@app.route('/dashboard/etl')
+@login_required
+def dashboard_etl():
+    if not current_user.es_admin:
+        flash('Acceso denegado', 'error')
+        return redirect(url_for('tienda'))
+    
+    from models import ReporteETL
+    import json
+    
+    reporte_ventas = ReporteETL.query.filter_by(tipo_reporte='ventas').order_by(ReporteETL.fecha_reporte.desc()).first()
+    reporte_productos = ReporteETL.query.filter_by(tipo_reporte='productos').order_by(ReporteETL.fecha_reporte.desc()).first()
+    reporte_usuarios = ReporteETL.query.filter_by(tipo_reporte='usuarios').order_by(ReporteETL.fecha_reporte.desc()).first()
+    
+    ventas = json.loads(reporte_ventas.datos) if reporte_ventas else {}
+    productos = json.loads(reporte_productos.datos) if reporte_productos else {}
+    usuarios = json.loads(reporte_usuarios.datos) if reporte_usuarios else {}
+    
+    return render_template('dashboard_etl.html',
+                         ventas=ventas,
+                         productos=productos,
+                         usuarios=usuarios,
+                         ultima_actualizacion=reporte_ventas.fecha_reporte if reporte_ventas else None)
+
+@app.route('/api/etl/ejecutar')
+@login_required
+def api_ejecutar_etl():
+    if not current_user.es_admin:
+        return jsonify({'error': 'Acceso denegado'}), 403
+    
+    from etl import ejecutar_etl
+    ejecutar_etl()
+    
+    return jsonify({'mensaje': 'ETL ejecutado correctamente'})
