@@ -18,14 +18,9 @@ def ejecutar_etl():
         ordenes = Orden.query.all()
         items_orden = OrdenItem.query.all()
         
-        print(f"   - Usuarios: {len(usuarios)}")
-        print(f"   - Productos: {len(productos)}")
-        print(f"   - Órdenes: {len(ordenes)}")
-        
         # ============ 2. TRANSFORM ============
         print("\n🔄 TRANSFORM: Calculando métricas...")
         
-        # Ventas totales
         total_ventas = sum(o.total for o in ordenes)
         
         # Productos más vendidos
@@ -48,17 +43,26 @@ def ejecutar_etl():
         # Usuarios por rol
         admin_count = sum(1 for u in usuarios if u.es_admin)
         
+        # ============ TOP COMPRADORES (NUEVO) ============
+        top_usuarios = {}
+        for orden in ordenes:
+            nombre_usuario = orden.usuario.nombre
+            top_usuarios[nombre_usuario] = top_usuarios.get(nombre_usuario, 0) + orden.total
+        
+        top_compradores = sorted(top_usuarios.items(), key=lambda x: x[1], reverse=True)[:5]
+        
         # ============ 3. LOAD ============
         print("\n💾 LOAD: Guardando reportes...")
         
-        # Reporte de ventas
+        # Reporte de ventas (con top_compradores)
         reporte_ventas = ReporteETL(
             tipo_reporte='ventas',
             datos=json.dumps({
                 'total_ventas': total_ventas,
                 'total_ordenes': len(ordenes),
                 'promedio_venta': total_ventas / len(ordenes) if ordenes else 0,
-                'ventas_por_mes': ventas_por_mes
+                'ventas_por_mes': ventas_por_mes,
+                'top_compradores': top_compradores  # NUEVO
             }),
             resumen=f"Total ventas: ${total_ventas:.2f} en {len(ordenes)} órdenes"
         )
@@ -97,7 +101,7 @@ def ejecutar_etl():
         print(f"💰 Total ventas: ${total_ventas:,.2f}")
         print(f"📦 Total productos: {len(productos)}")
         print(f"👥 Total usuarios: {len(usuarios)}")
-        print(f"🏆 Top producto: {top_productos[0][0] if top_productos else 'Ninguno'}")
+        print(f"🏆 Top comprador: {top_compradores[0][0] if top_compradores else 'Ninguno'}")
         print(f"⚠️ Stock bajo: {len(stock_bajo)} productos")
         
         print("\n✅ ETL COMPLETADO")

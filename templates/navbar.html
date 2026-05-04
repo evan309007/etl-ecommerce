@@ -39,6 +39,7 @@
                 {% if current_user.es_admin %}
                 {% if request.endpoint == 'dashboard_etl' %}
         <button onclick="ejecutarETL()" class="btn-etl">🔄 Actualizar ETL</button>
+        <a href="{{ url_for('exportar_excel') }}" class="btn btn-success">📊 Exportar a Excel</a> 
         {% endif %}
         {% endif %}
         <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 Cerrar Sesión</a>

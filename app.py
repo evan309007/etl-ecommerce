@@ -2,8 +2,15 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 import bcrypt
+import json
+import pandas as pd
 from models import db, Usuario, Producto, CarritoItem, Orden, OrdenItem
-
+from io import BytesIO
+from flask import send_file
+from datetime import datetime
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+from models import ReporteETL
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'tu_clave_secreta_aqui_cambiala'
@@ -611,6 +618,265 @@ def api_ejecutar_etl():
     ejecutar_etl()
     
     return jsonify({'mensaje': 'ETL ejecutado correctamente'})
+
+def aplicar_formato_excel(writer, sheet_name, columnas_ancho=None, formato_moneda=None):
+    """
+    Aplica formato profesional a las hojas de Excel
+    columnas_ancho: dict con índices de columna y ancho personalizado
+    formato_moneda: lista de índices de columnas a formatear como moneda
+    """
+    workbook = writer.book
+    if sheet_name not in workbook.sheetnames:
+        return
+    
+    ws = workbook[sheet_name]
+    
+    # Estilos
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill(start_color="2C3E50", end_color="2C3E50", fill_type="solid")
+    moneda_fill = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")
+    center_alignment = Alignment(horizontal="center", vertical="center")
+    left_alignment = Alignment(horizontal="left", vertical="center")
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    
+    # Formato a encabezados
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center_alignment
+        cell.border = thin_border
+    
+    # Ancho de columnas (prioridad a anchos específicos)
+    if columnas_ancho:
+        for col_idx, ancho in columnas_ancho.items():
+            col_letter = get_column_letter(col_idx)
+            ws.column_dimensions[col_letter].width = ancho
+    else:
+        # Ancho automático basado en contenido
+        for column in ws.columns:
+            max_length = 0
+            column_letter = get_column_letter(column[0].column)
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)
+            ws.column_dimensions[column_letter].width = adjusted_width
+    
+    # Formato moneda y otros ajustes
+    for row in ws.iter_rows(min_row=2):
+        for idx, cell in enumerate(row, start=1):
+            if formato_moneda and idx in formato_moneda:
+                if isinstance(cell.value, (int, float)):
+                    cell.number_format = '$#,##0.00'
+                    cell.fill = moneda_fill
+                    cell.alignment = center_alignment
+            elif isinstance(cell.value, (int, float)):
+                cell.alignment = center_alignment
+            elif cell.value and isinstance(cell.value, str) and len(cell.value) > 50:
+                cell.alignment = left_alignment
+
+@app.route('/exportar/excel')
+@login_required
+def exportar_excel():
+    if not current_user.es_admin:
+        flash('Acceso denegado', 'error')
+        return redirect(url_for('tienda'))
+    
+    from models import ReporteETL
+    import json
+    
+    # ============ 1. DATOS DEL ETL ============
+    reporte_ventas = ReporteETL.query.filter_by(tipo_reporte='ventas').order_by(ReporteETL.fecha_reporte.desc()).first()
+    reporte_productos = ReporteETL.query.filter_by(tipo_reporte='productos').order_by(ReporteETL.fecha_reporte.desc()).first()
+    reporte_usuarios = ReporteETL.query.filter_by(tipo_reporte='usuarios').order_by(ReporteETL.fecha_reporte.desc()).first()
+    
+    ventas = json.loads(reporte_ventas.datos) if reporte_ventas else {}
+    productos = json.loads(reporte_productos.datos) if reporte_productos else {}
+    usuarios = json.loads(reporte_usuarios.datos) if reporte_usuarios else {}
+    
+    # ============ 2. DATOS EN VIVO DE LA BD ============
+    with app.app_context():
+        usuarios_completos = Usuario.query.all()
+        df_usuarios_completo = pd.DataFrame([{
+            'ID': u.id,
+            'Nombre': u.nombre,
+            'Usuario': u.usuario,
+            'Email': u.email,
+            'Celular': u.celular,
+            'Rol': 'Administrador' if u.es_admin else 'Usuario',
+            'Fecha Registro': u.fecha_registro.strftime('%Y-%m-%d') if u.fecha_registro else '',
+            'Total Gastado': sum(o.total for o in u.ordenes) if u.ordenes else 0,
+            'Número Órdenes': len(u.ordenes) if u.ordenes else 0
+        } for u in usuarios_completos])
+        
+        productos_completos = Producto.query.all()
+        df_productos_completo = pd.DataFrame([{
+            'ID': p.id,
+            'Nombre': p.nombre,
+            'Descripción': (p.descripcion[:100] + '...') if p.descripcion and len(p.descripcion) > 100 else (p.descripcion or ''),
+            'Precio': p.precio,
+            'Stock': p.stock,
+            'Categoría': p.categoria or 'Sin categoría',
+            'Valor Inventario': p.precio * p.stock,
+            'Fecha Creación': p.fecha_creacion.strftime('%Y-%m-%d') if p.fecha_creacion else ''
+        } for p in productos_completos])
+        
+        ordenes_completas = Orden.query.all()
+        df_ordenes = pd.DataFrame([{
+            'ID Orden': o.id,
+            'Cliente': o.usuario.nombre,
+            'Usuario': o.usuario.usuario,
+            'Fecha': o.fecha.strftime('%Y-%m-%d'),
+            'Total': o.total,
+            'Estado': o.estado
+        } for o in ordenes_completas])
+        
+        items = OrdenItem.query.all()
+        df_items = pd.DataFrame([{
+            'Orden ID': i.orden_id,
+            'Producto': i.producto.nombre,
+            'Cantidad': i.cantidad,
+            'Precio Unitario': i.precio_unitario,
+            'Subtotal': i.cantidad * i.precio_unitario
+        } for i in items])
+        
+        ventas_por_usuario = []
+        for u in usuarios_completos:
+            total = sum(o.total for o in u.ordenes) if u.ordenes else 0
+            if total > 0:
+                ventas_por_usuario.append({
+                    'Usuario': u.usuario,
+                    'Nombre': u.nombre,
+                    'Total Gastado': total,
+                    'Número Órdenes': len(u.ordenes) if u.ordenes else 0
+                })
+        df_ventas_usuario = pd.DataFrame(ventas_por_usuario).sort_values('Total Gastado', ascending=False)
+    
+    # ============ 3. CREAR EXCEL CON FORMATO ============
+    output = BytesIO()
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        
+        # Resumen Ejecutivo
+        resumen = pd.DataFrame([
+            ['📊 MÉTRICAS GENERALES', ''],
+            ['Ventas Totales', f"${ventas.get('total_ventas', 0):,.2f}"],
+            ['Total Órdenes', ventas.get('total_ordenes', 0)],
+            ['Total Productos', productos.get('total_productos', 0)],
+            ['Total Usuarios', usuarios.get('total_usuarios', 0)],
+            ['Promedio por Venta', f"${ventas.get('promedio_venta', 0):,.2f}"],
+            ['Stock Total', productos.get('stock_total', 0)],
+            ['Productos Stock Bajo', len(productos.get('stock_bajo', []))],
+            ['Administradores', usuarios.get('administradores', 0)],
+            ['Usuarios Normales', usuarios.get('usuarios_normales', 0)],
+        ])
+        resumen.to_excel(writer, sheet_name='Resumen Ejecutivo', index=False, header=False)
+        
+        # Ventas por Mes
+        if ventas.get('ventas_por_mes'):
+            df_meses = pd.DataFrame(ventas['ventas_por_mes'].items(), columns=['Mes', 'Total Ventas'])
+            df_meses.to_excel(writer, sheet_name='Ventas por Mes', index=False)
+        
+        # Stock Bajo
+        if productos.get('stock_bajo'):
+            df_stock_bajo = pd.DataFrame(productos['stock_bajo'], columns=['Producto', 'Stock'])
+            df_stock_bajo.to_excel(writer, sheet_name='Stock Bajo', index=False)
+        
+        # Top Productos ETL
+        if productos.get('top_mas_vendidos'):
+            df_top_etl = pd.DataFrame(productos['top_mas_vendidos'][:10], columns=['Producto', 'Unidades Vendidas'])
+            df_top_etl.to_excel(writer, sheet_name='Top Productos', index=False)
+        
+        # Usuarios
+        df_usuarios_completo.to_excel(writer, sheet_name='Usuarios', index=False)
+        
+        # Productos
+        df_productos_completo.to_excel(writer, sheet_name='Productos', index=False)
+        
+        # Órdenes
+        df_ordenes.to_excel(writer, sheet_name='Órdenes', index=False)
+        
+        # Detalle Compras
+        df_items.to_excel(writer, sheet_name='Detalle Compras', index=False)
+        
+        # Ventas por Usuario
+        if not df_ventas_usuario.empty:
+            df_ventas_usuario.to_excel(writer, sheet_name='Ventas por Usuario', index=False)
+        
+        # Top Compradores
+        if ventas.get('top_compradores'):
+            df_top_compradores = pd.DataFrame(ventas['top_compradores'][:10], columns=['Usuario', 'Total Gastado'])
+            df_top_compradores.to_excel(writer, sheet_name='Top Compradores', index=False)
+        
+        # ===== APLICAR FORMATO A CADA HOJA =====
+        # Hoja: Usuarios (ancho específico)
+        aplicar_formato_excel(writer, 'Usuarios', 
+        columnas_ancho={1: 5, 2: 25, 3: 15, 4: 30, 5: 15, 6: 15, 7: 12, 8: 15, 9: 15},
+        formato_moneda=[8])
+        
+        # Hoja: Productos (anchos específicos - IMPORTANTE)
+        aplicar_formato_excel(writer, 'Productos',
+        columnas_ancho={1: 5, 2: 30, 3: 40, 4: 12, 5: 8, 6: 15, 7: 15, 8: 12},
+        formato_moneda=[4, 7])
+        
+        # Hoja: Órdenes
+        aplicar_formato_excel(writer, 'Órdenes',
+        columnas_ancho={1: 8, 2: 25, 3: 15, 4: 12, 5: 12, 6: 12},
+        formato_moneda=[5])
+        
+        # Hoja: Detalle Compras
+        if 'Detalle Compras' in writer.book.sheetnames:
+         aplicar_formato_excel(writer, 'Detalle Compras',
+          columnas_ancho={1: 10, 2: 30, 3: 10, 4: 15, 5: 15},
+          formato_moneda=[4, 5])
+        
+        # Hoja: Ventas por Usuario
+        if 'Ventas por Usuario' in writer.book.sheetnames:
+         aplicar_formato_excel(writer, 'Ventas por Usuario',
+          columnas_ancho={1: 20, 2: 25, 3: 15, 4: 12},
+          formato_moneda=[3])
+        
+        # Hoja: Top Compradores
+        if 'Top Compradores' in writer.book.sheetnames:
+         aplicar_formato_excel(writer, 'Top Compradores',
+          columnas_ancho={1: 20, 2: 15},
+          formato_moneda=[2])
+        
+        # Hoja: Ventas por Mes
+        if 'Ventas por Mes' in writer.book.sheetnames:
+         aplicar_formato_excel(writer, 'Ventas por Mes',
+          columnas_ancho={1: 12, 2: 15},
+          formato_moneda=[2])
+
+        # Hoja: Stock Bajo
+        if 'Stock Bajo' in writer.book.sheetnames:
+         aplicar_formato_excel(writer, 'Stock Bajo',
+          columnas_ancho={1: 30, 2: 10})
+
+        # Hoja: Top Productos
+        if 'Top Productos' in writer.book.sheetnames:
+         aplicar_formato_excel(writer, 'Top Productos',
+          columnas_ancho={1: 30, 2: 15})
+        
+        # Hojas sin formato moneda pero con ancho automático
+        for sheet in ['Resumen Ejecutivo', 'Stock Bajo', 'Top Productos']:
+            if sheet in writer.book.sheetnames:
+                aplicar_formato_excel(writer, sheet)
+    
+    output.seek(0)
+    
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=f'reporte_etl_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx',
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 if __name__ == '__main__':
     app.run(debug=True)
