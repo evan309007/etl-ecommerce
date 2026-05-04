@@ -15,10 +15,13 @@
                 {% if request.endpoint != 'dashboard' %}
                 <li><a class="dropdown-item" href="{{ url_for('dashboard') }}">👥 Perfil</a></li>
                 {% endif %}
-                 <li><a class="dropdown-item" href="/dashboard/etl">📊 Dashboard ETL</a></li>
                 {% if current_user.es_admin %}
-               
+                {% if request.endpoint != 'dashboard_etl' %}
+                <li><a class="dropdown-item" href="{{ url_for('dashboard_etl') }}">📊 Dashboard ETL</a></li>
+                {% endif %}
+                 {% if request.endpoint != 'gestionar_productos' %}
                 <li><a class="dropdown-item" href="{{ url_for('gestionar_productos') }}">📦 Inventario</a></li>
+                {% endif %}
                 {% endif %}
                 
                 {% if request.endpoint != 'mis_ordenes' %}
@@ -32,7 +35,12 @@
         </div>
     </div>
     <div class="user-area">
-        <span>Bienvenido {{ current_user.nombre }}</span>
+                <span>Bienvenido {{ current_user.nombre }}</span>
+                {% if current_user.es_admin %}
+                {% if request.endpoint == 'dashboard_etl' %}
+        <button onclick="ejecutarETL()" class="btn-etl">🔄 Actualizar ETL</button>
+        {% endif %}
+        {% endif %}
         <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 Cerrar Sesión</a>
     </div>
 </div>

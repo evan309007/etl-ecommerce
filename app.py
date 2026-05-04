@@ -17,10 +17,6 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'Por favor inicia sesión para acceder a esta página'
 
-@app.route('/etl-test')
-@login_required
-def etl_test():
-    return "<h1>ETL Dashboard</h1><p>Esta ruta funciona!</p>"
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -43,7 +39,7 @@ with app.app_context():
     if not admin:
         admin_password = hash_password('admin123')
         admin = Usuario(
-            nombre='Administrador',
+            nombre='Administrador2',
             usuario='admin',
             celular='0000000000',
             email='admin@ejemplo.com',
@@ -119,7 +115,7 @@ def login():
             if user.es_admin:
                 return redirect(url_for('dashboard'))
             else:
-                return redirect(url_for('perfil'))
+                return redirect(url_for('tienda'))
         else:
             flash('Usuario o contraseña incorrectos', 'error')
     
@@ -578,8 +574,6 @@ def ver_orden(orden_id):
     
     return render_template('orden_detalle.html', orden=orden)
 
-if __name__ == '__main__':
-    app.run(debug=True)
     
 # ============ ENDPOINTS ETL ============
 
@@ -617,3 +611,6 @@ def api_ejecutar_etl():
     ejecutar_etl()
     
     return jsonify({'mensaje': 'ETL ejecutado correctamente'})
+
+if __name__ == '__main__':
+    app.run(debug=True)
