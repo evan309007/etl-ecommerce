@@ -1,0 +1,37 @@
+
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+<div class="navbar">
+    <div class="logo-area">
+        <h2>🛍️ Evan Store</h2>
+        <div class="dropdown" style="margin-top: 10px;">
+            <button class="btn btn-warning btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                ☰   Menu
+            </button>
+            <ul class="dropdown-menu">
+                {% if request.endpoint != 'tienda' %}
+                <li><a class="dropdown-item" href="{{ url_for('tienda') }}">🏠 Home </a></li>
+                {% endif %}
+                {% if request.endpoint != 'dashboard' %}
+                <li><a class="dropdown-item" href="{{ url_for('dashboard') }}">👥 Perfil</a></li>
+                {% endif %}
+                {% if request.endpoint != 'gestionar_productos' %}
+                {% if current_user.es_admin %}
+                <li><a class="dropdown-item" href="{{ url_for('gestionar_productos') }}">📦 Inventario</a></li>
+                {% endif %}
+                {% endif %}
+                {% if request.endpoint != 'mis_ordenes' %}
+                <li><a class="dropdown-item" href="{{ url_for('mis_ordenes') }}">📋 Mis Órdenes</a></li>
+                {% endif %}
+                {% if request.endpoint != 'ver_carrito' %}
+                <li><a class="dropdown-item" href="{{ url_for('ver_carrito') }}" class="btn btn-success btn-sm" id="carritoLink">
+                 🛒 Carrito <span id="carritoCount" class="badge bg-danger">0</span></a></li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+    <div class="user-area">
+        <span>Bienvenido {{ current_user.nombre }}</span>
+        <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 Cerrar Sesión</a>
+    </div>
+</div>

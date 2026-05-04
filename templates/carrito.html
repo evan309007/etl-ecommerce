@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mi Carrito</title>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    {% include 'navbar.html' %}
+    
+    <h1>🛒 Mi Carrito</h1>
+    
+    
+    {% if items %}
+        <table>
+            <tr>
+                <th>Producto</th>
+                <th>Precio</th>
+                <th>Cantidad</th>
+                <th>Subtotal</th>
+                <th></th>
+            </tr>
+            {% for item in items %}
+            <tr>
+                <td>{{ item.producto.nombre }}</td>
+                <td>${{ "%.2f"|format(item.producto.precio) }}</td>
+                <td>{{ item.cantidad }}</td>
+                <td>${{ "%.2f"|format(item.producto.precio * item.cantidad) }}</td>
+                <td>
+                    <button class="btn" onclick="eliminar({{ item.id }})">Eliminar</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+
+        
+        <div class="totales-container">
+    <div class="total-line">
+        <span class="total-label">SubTotal:</span>
+        <span class="total-amount">${{ "%.2f"|format(total) }}</span>
+    </div>
+    <div class="total-line">
+        <span class="total-label">IVA (8%):</span>
+        <span class="total-amount">${{ "%.2f"|format(total * 0.08) }}</span>
+    </div>
+    <div class="total-line total-final">
+        <span class="total-label">Total a pagar:</span>
+        <span class="total-amount">${{ "%.2f"|format(total + total * 0.08) }}</span>
+    </div>
+</div>
+
+<!-- Botón de checkout -->
+<div class="checkout-container" style="margin-top: 20px;">
+    <button onclick="procesarCheckout()" class="btn-checkout" id="btnCheckout">
+    ✅ Finalizar Compra
+</button>
+</div>
+    {% else %}
+        <p>🛍️ Tu carrito está vacío</p>
+    {% endif %}
+    
+    <br>
+    <a href="/tienda" class="seguir">← Seguir comprando</a>
+    
+    <script>
+        function eliminar(itemId) {
+            if (confirm('¿Eliminar producto?')) {
+                fetch(`/api/carrito/eliminar/${itemId}`, { method: 'DELETE' })
+                .then(() => location.reload());
+            }
+        }
+
+
+        function procesarCheckout() {
+    if (!confirm('¿Confirmar compra? Se descontará el stock.')) return;
+    
+    const btn = document.getElementById('btnCheckout');
+    btn.textContent = '⏳ Procesando...';
+    btn.disabled = true;
+    
+    fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('❌ ' + data.error);
+            btn.textContent = '✅ Finalizar Compra';
+            btn.disabled = false;
+        } else {
+            alert('✅ ' + data.mensaje + '\nTotal: $' + data.total.toFixed(2));
+            window.location.href = '/mis-ordenes';
+        }
+    })
+    .catch(error => {
+        alert('❌ Error: ' + error);
+        btn.textContent = '✅ Finalizar Compra';
+        btn.disabled = false;
+    });
+}
+    </script>
+    <script>
+    // Dropdown manual - Bootstrap alternativo
+    document.addEventListener('DOMContentLoaded', function() {
+        var dropdownToggles = document.querySelectorAll('.dropdown-toggle');
+        
+        dropdownToggles.forEach(function(toggle) {
+            toggle.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                var parent = this.closest('.dropdown');
+                var menu = parent.querySelector('.dropdown-menu');
+                
+                // Cerrar otros dropdowns abiertos
+                document.querySelectorAll('.dropdown.show').forEach(function(openDropdown) {
+                    if (openDropdown !== parent) {
+                        openDropdown.classList.remove('show');
+                        var openMenu = openDropdown.querySelector('.dropdown-menu');
+                        if (openMenu) openMenu.classList.remove('show');
+                    }
+                });
+                
+                // Toggle actual
+                parent.classList.toggle('show');
+                if (menu) menu.classList.toggle('show');
+                
+                var expanded = this.getAttribute('aria-expanded') === 'true' ? 'false' : 'true';
+                this.setAttribute('aria-expanded', expanded);
+            });
+        });
+        
+        // Cerrar dropdown al hacer clic fuera
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.dropdown')) {
+                document.querySelectorAll('.dropdown.show').forEach(function(dropdown) {
+                    dropdown.classList.remove('show');
+                    var menu = dropdown.querySelector('.dropdown-menu');
+                    if (menu) menu.classList.remove('show');
+                    var toggle = dropdown.querySelector('.dropdown-toggle');
+                    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+                });
+            }
+        });
+    });
+</script>
+</body>
+</html>
